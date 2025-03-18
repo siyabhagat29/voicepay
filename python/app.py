@@ -6,13 +6,11 @@ from deepfake_proper import DeepfakeDetector
 from voice_signature_with_deepfake import transcribe_audio, is_exact_match
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for Flutter requests
+CORS(app)
 
-# Ensure the upload directory exists
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Sentences for voice verification
 SENTENCES = [
     "Technology is evolving every single day.",
     "The weather today is quite unpredictable.",
@@ -26,66 +24,86 @@ SENTENCES = [
     "Every challenge is an opportunity to grow stronger."
 ]
 
-# Initialize DeepfakeDetector only once
 deepfake_detector = DeepfakeDetector("/Users/dhavalbhagat/Desktop/VoicePay/voicepay/python/dataset/shuffled_file.csv")
+
+user_progress = {}  # Stores user progress (IP-based for simplicity)
 
 @app.route("/get_sentences", methods=["GET"])
 def get_sentences():
     selected_sentences = random.sample(SENTENCES, 3)
+    user_ip = request.remote_addr
+    user_progress[user_ip] = {"sentences": selected_sentences, "index": 0}
     return jsonify({"sentences": selected_sentences})
 
 @app.route("/verify_speech", methods=["POST"])
 def verify_speech():
+    user_ip = request.remote_addr
+    if user_ip not in user_progress:
+        return jsonify({"error": "Session expired. Restart required.", "deepfake_result": "N/A"}), 400
+
     if "audio" not in request.files:
         return jsonify({"error": "No audio file provided", "deepfake_result": "N/A"}), 400
-    
+
     audio = request.files["audio"]
-    
     if audio.filename == "":
         return jsonify({"error": "No file selected", "deepfake_result": "N/A"}), 400
-    
-    expected_text = request.form.get("expected_text", "").strip().lower()
 
-    # Save audio file
-    audio_path = os.path.join(UPLOAD_FOLDER, "user_audio5.wav")
+    expected_text = user_progress[user_ip]["sentences"][user_progress[user_ip]["index"]].strip().lower()
+
+    audio_path = os.path.join(UPLOAD_FOLDER, f"user_audio_{user_ip}.wav")
     audio.save(audio_path)
 
-    print(f"✅ Received file: {audio.filename}")
-    print(f"📌 Saved to: {audio_path}")
-
-    # Check for deepfake
-    deepfake_result = deepfake_detector.predict_audio_deepfake(audio_path)  # Call model
-    print(f"🔍 Deepfake Detection Result: {deepfake_result}")
+    deepfake_result = deepfake_detector.predict_audio_deepfake(audio_path)
 
     if deepfake_result == "FAKE":
+        del user_progress[user_ip]  # Reset session
         return jsonify({
             "result": "Deepfake detected",
-            "message": "Your voice does not match, possible deepfake detected.",
+            "message": "Deepfake detected! Restart the process with new sentences.",
             "deepfake_result": deepfake_result
-        }), 403  # Unauthorized action due to deepfake
-
-    # Transcribe audio
+        }), 403
+    
+    if deepfake_result == "REAL":
+        #del user_progress[user_ip]  # Reset session
+        return jsonify({
+            "result": "Deepfake passed",
+            "message": "Deepfake passed!",
+            "deepfake_result": deepfake_result
+        }), 403
+    
     transcribed_text = transcribe_audio(audio_path)
     if not transcribed_text:
         return jsonify({
             "result": "Could not transcribe",
-            "message": "There was an issue processing your audio.",
+            "message": "Audio processing failed. Please try again.",
             "deepfake_result": deepfake_result
         }), 400
 
-    # Check if transcribed text matches expected text
-    if is_exact_match(transcribed_text, expected_text):
-        return jsonify({
-            "result": "Success",
-            "message": "Great! Please speak the next sentence.",
-            "deepfake_result": deepfake_result
-        })
-    else:
+    if not is_exact_match(transcribed_text, expected_text):
         return jsonify({
             "result": "Failure",
-            "message": "Please speak the correct sentence.",
+            "message": f"❌ Incorrect! Please repeat: \"{expected_text}\"",
             "deepfake_result": deepfake_result
         }), 401
 
+    # Only increment if correct
+    user_progress[user_ip]["index"] += 1
+
+    if user_progress[user_ip]["index"] == 3:
+        result = {
+            "result": "Success",
+            "message": "✅ All sentences verified!\n🛡️ Deepfake Check: " + deepfake_result,
+            "deepfake_result": deepfake_result,
+            "training_complete": True
+        }
+        del user_progress[user_ip]  # Clear progress after completion
+        return jsonify(result)
+
+    return jsonify({
+        "result": "Success",
+        "message": f"✅ Correct! Please say: \"{user_progress[user_ip]['sentences'][user_progress[user_ip]['index']]}\"",
+        "deepfake_result": deepfake_result
+    })
+
 if __name__ == "__main__":
-    app.run(host="192.168.180.74", port=5001, debug=True)
+    app.run(host="192.168.29.130", port=5001, debug=True)

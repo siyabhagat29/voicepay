@@ -28,7 +28,7 @@ class _VoiceSignatureScreenState extends State<VoiceSignatureScreen> {
   Future<void> fetchSentences() async {
     try {
       var response =
-          await http.get(Uri.parse("http://192.168.180.74:5001/get_sentences"));
+          await http.get(Uri.parse("http://192.168.29.130:5001/get_sentences"));
       if (response.statusCode == 200) {
         var data = jsonDecode(response.body);
         setState(() {
@@ -100,7 +100,7 @@ class _VoiceSignatureScreenState extends State<VoiceSignatureScreen> {
 
   try {
     var request = http.MultipartRequest(
-        "POST", Uri.parse("http://192.168.180.74:5001/verify_speech"));
+        "POST", Uri.parse("http://192.168.29.130:5001/verify_speech"));
     request.files
         .add(await http.MultipartFile.fromPath("audio", audioFilePath));
     request.fields["expected_text"] = sentences[currentSentenceIndex];
@@ -111,33 +111,55 @@ class _VoiceSignatureScreenState extends State<VoiceSignatureScreen> {
 
     var response = await request.send();
     var responseBody = await response.stream.bytesToString();
-    print("Server Response: $responseBody"); // DEBUG PRINT
     var data = jsonDecode(responseBody);
 
-    String deepfakeResult = data["deepfake_result"] ?? "Unknown"; // Get deepfake status
-    String message = data["message"] ?? "Unknown response"; // Get message
+    String deepfakeResult = data["deepfake_result"] ?? "Unknown";
+    String message = data["message"] ?? "Unknown response";
 
-    setState(() {
-      if (response.statusCode == 200) {
-        resultMessage = "✅ $message\n🛡️ Deepfake Check: $deepfakeResult";
-      } else if (response.statusCode == 403) {
-        resultMessage = "🚨 Deepfake detected! Use a real voice.\n🛡️ Deepfake Check: $deepfakeResult";
+    if (response.statusCode == 403) { // Deepfake detected
+      setState(() {
+        resultMessage = "🚨 Deepfake detected! Restarting process.\n🛡️ Deepfake Check: $deepfakeResult";
+      });
+      await Future.delayed(const Duration(seconds: 3));
+      fetchSentences(); // Restart with new sentences
+      return;
+    }
+
+    if (response.statusCode == 401) { // Incorrect sentence
+      setState(() {
+        resultMessage = "❌ Incorrect. Say: \"${sentences[currentSentenceIndex]}\" again.";
+      });
+      return;
+    }
+
+    if (response.statusCode == 200) {
+      if (data["training_complete"] == true) {
+        setState(() {
+          resultMessage = "✅ $message";
+        });
+
+        await Future.delayed(const Duration(seconds: 5)); // Wait 5 seconds
+        setState(() {
+          resultMessage = "🎉 Training Complete!";
+        });
       } else {
+        setState(() {
+          resultMessage = "✅ $message\n🛡️ Deepfake Check: $deepfakeResult";
+          currentSentenceIndex++;
+        });
+      }
+    } else {
+      setState(() {
         resultMessage = "❌ $message\n🛡️ Deepfake Check: $deepfakeResult";
-      }
-
-      if (currentSentenceIndex < sentences.length - 1) {
-        currentSentenceIndex++;
-      } else {
-        resultMessage = "🎉 Training Completed!";
-      }
-    });
+      });
+    }
   } catch (e) {
     setState(() {
       resultMessage = "❌ Error verifying speech: $e";
     });
   }
 }
+
 
   @override
   Widget build(BuildContext context) {
