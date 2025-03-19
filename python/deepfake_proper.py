@@ -238,7 +238,7 @@ class DeepfakeDetector:
         features = self.extract_features_from_audio(file_path)
         if features is not None:
             prediction = self.model.predict(features)[0][0]
-            result = "REAL" if prediction < 0.5 else "FAKE"
+            result = "REAL(Human Voice)" if prediction < 0.5 else "FAKE(AI Voice)"
             confidence = prediction if result == "FAKE" else 1 - prediction
             print(f"Prediction for {os.path.basename(file_path)}: {result} with {confidence:.2f}% confidence.")
             return result
@@ -247,5 +247,5 @@ class DeepfakeDetector:
             return "error"
 
 # Example usage
-# detector = DeepfakeDetector("C:/Users/prana/OneDrive/Desktop/thackur/thackur/backend/KAGGLE/AUDIO/shuffled_file.csv")
-# detector.predict_audio_deepfake("C:/Users/prana/OneDrive/Desktop/thackur/thackur/backend/fake_fr.mp3")
+#detector = DeepfakeDetector("/Users/dhavalbhagat/Desktop/VoicePay/voicepay/python/uploads/user_audio5.wav")
+#detector.predict_audio_deepfake("/Users/dhavalbhagat/Desktop/VoicePay/voicepay/python/uploads/user_audio5.wav")
