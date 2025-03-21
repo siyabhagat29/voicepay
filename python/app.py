@@ -6,6 +6,7 @@ import cloudinary
 import cloudinary.uploader
 from deepfake_proper import DeepfakeDetector
 from voice_signature_with_deepfake import transcribe_audio, is_exact_match
+from voice_matching import compare_with_previous_recordings
 from cryptography.fernet import Fernet
 import tempfile
 
@@ -34,7 +35,7 @@ SENTENCES = [
     "Blockchain technology ensures secure transactions."
 ]
 
-deepfake_detector = DeepfakeDetector("/Users/dhavalbhagat/Desktop/VoicePay/voicepay/python/dataset/shuffled_file.csv")
+deepfake_detector = DeepfakeDetector("python/dataset/shuffled_file.csv")
 
 user_progress = {}  # Tracks user verification progress
 
@@ -117,13 +118,13 @@ def verify_speech():
         enc_file.write(encrypted_audio)
         enc_file_path = enc_file.name
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".key") as key_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as key_file:
         key_file.write(encryption_key)
         key_file_path = key_file.name
 
     # 🔼 Upload encrypted audio & key to Cloudinary
     enc_filename = f"{username}_{user_progress[username]['index']+1}.enc"
-    key_filename = f"{username}_key{user_progress[username]['index']+1}.key"
+    key_filename = f"{username}_key{user_progress[username]['index']+1}.txt"
 
     cloudinary_audio_url = upload_to_cloudinary(enc_file_path, enc_filename)
     cloudinary_key_url = upload_to_cloudinary(key_file_path, key_filename)
@@ -157,5 +158,102 @@ def verify_speech():
         "deepfake_result": deepfake_result
     })
 
+@app.route("/create_voice_signature", methods=["POST"])
+def create_voice_signature():
+    print("🔹 Received request to create voice signature.")  # Debug message
+
+    username = request.form.get("username")
+    if not username:
+        print("❌ Error: Username not provided.")  # Debug message
+        return jsonify({"error": "Username is required"}), 400
+
+    if "audio" not in request.files:
+        print("❌ Error: No audio file received in request.")  # Debug message
+        return jsonify({"error": "No audio file provided"}), 400
+
+    audio = request.files["audio"]
+    file_data = audio.read()
+    print(f"🔹 Received audio file: {audio.filename}, Size: {len(file_data)} bytes")  # Debug message
+
+    # 🔹 Create a temporary audio file for deepfake detection
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+        temp_audio.write(file_data)
+        temp_audio_path = temp_audio.name  # Save the file path
+
+    try:
+        # 🔍 Deepfake detection using temp file
+        print("🔹 Running deepfake detection...")
+        deepfake_result = deepfake_detector.predict_audio_deepfake(temp_audio_path)
+        print(f"✅ Deepfake detection result: {deepfake_result}")  # Debug message
+    except Exception as e:
+        deepfake_result = f"Error: {str(e)}"
+        print(f"❌ Deepfake detection error: {deepfake_result}")  # Debug message
+        return jsonify({"error": "Deepfake detection failed", "message": str(e)}), 500
+
+    # 🗑️ Delete the temporary audio file
+    os.remove(temp_audio_path)
+    print("✅ Temporary audio file deleted.")  # Debug message
+
+    # 🚫 Reject if AI-generated voice detected
+    if deepfake_result == "FAKE(AI Voice)":
+        return jsonify({
+            "error": "🚨 Deepfake detected! Voice signature cannot be created.",
+            "deepfake_result": deepfake_result
+        }), 403
+
+    # 🔍 Compare with previous voice signatures
+    print("🔹 Comparing with previous recordings...")
+    if not compare_with_previous_recordings(username, file_data):
+        print("❌ Voice mismatch detected!")  # Debug message
+        return jsonify({"error": "❌ Voice mismatch! Signature does not match previous recordings."}), 401
+
+    # 🔐 Encrypt the audio file
+    print("🔹 Encrypting audio file...")
+    encrypted_audio, encryption_key = encrypt_audio(file_data)
+    print(f"✅ Encryption successful. Encrypted file size: {len(encrypted_audio)} bytes")  # Debug message
+
+    # 🔹 Save encrypted file temporarily
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".enc") as enc_file:
+        enc_file.write(encrypted_audio)
+        enc_file_path = enc_file.name
+    print(f"✅ Encrypted audio saved temporarily at: {enc_file_path}")  # Debug message
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as key_file:
+        key_file.write(encryption_key)
+        key_file_path = key_file.name
+    print(f"✅ Encryption key saved temporarily at: {key_file_path}")  # Debug message
+
+    # 🔼 Upload encrypted audio and key to Cloudinary
+    enc_filename = f"{username}_voiceSignature.enc"
+    key_filename = f"{username}_keySignature.txt"
+
+    print("🔹 Uploading encrypted audio to Cloudinary...")
+    cloudinary_audio_url = upload_to_cloudinary(enc_file_path, enc_filename)
+    print(f"✅ Encrypted audio uploaded: {cloudinary_audio_url}")  # Debug message
+    if not cloudinary_audio_url:
+        return jsonify({"error": "Cloudinary upload failed"}), 500
+
+    print("🔹 Uploading encryption key to Cloudinary...")
+    cloudinary_key_url = upload_to_cloudinary(key_file_path, key_filename)
+    print(f"✅ Encryption key uploaded: {cloudinary_key_url}")  # Debug message
+
+    # 🗑️ Delete temporary files
+    os.remove(enc_file_path)
+    os.remove(key_file_path)
+    print("✅ Temporary files deleted.")  # Debug message
+
+    return jsonify({
+        "result": "Success",
+        "message": "✅ Voice Signature Created!",
+        "deepfake_result": deepfake_result,
+        "audio_url": cloudinary_audio_url,
+        "key_url": cloudinary_key_url
+    })
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    print(f"❌ Server Error: {str(e)}")  # Debugging
+    return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
+
 if __name__ == "__main__":
-    app.run(host="192.168.29.130", port=5001, debug=True)
+    app.run(host="192.168.29.131", port=5002, debug=True)
