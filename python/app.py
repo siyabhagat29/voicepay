@@ -39,6 +39,18 @@ deepfake_detector = DeepfakeDetector("python/dataset/shuffled_file.csv")
 
 user_progress = {}  # Tracks user verification progress
 
+@app.route("/", methods=["GET"])
+def index():
+    return jsonify({
+        "status": "running",
+        "message": "Voice Signature API Server",
+        "endpoints": [
+            "/get_sentences",
+            "/verify_speech",
+            "/create_voice_signature"
+        ]
+    })
+
 @app.route("/get_sentences", methods=["POST"])
 def get_sentences(): 
     data = request.json
@@ -161,6 +173,10 @@ def verify_speech():
 @app.route("/create_voice_signature", methods=["POST"])
 def create_voice_signature():
     print("🔹 Received request to create voice signature.")  # Debug message
+    print(f"🔹 Request URL: {request.url}")
+    print(f"🔹 Request method: {request.method}")
+    print(f"🔹 Request form data: {request.form}")
+    print(f"🔹 Request files: {request.files}")
 
     username = request.form.get("username")
     if not username:
@@ -250,10 +266,18 @@ def create_voice_signature():
         "key_url": cloudinary_key_url
     })
 
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "The requested URL was not found"}), 404
+
+@app.route("/test", methods=["GET"])
+def test():
+    return jsonify({"status": "ok", "message": "Server is running correctly!"})
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     print(f"❌ Server Error: {str(e)}")  # Debugging
     return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="192.168.29.131", port=5002, debug=True)
+    app.run(host="192.168.147.43", port=5002, debug=True)

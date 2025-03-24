@@ -37,7 +37,7 @@ class _VoiceSignatureScreenState extends State<VoiceSignatureScreen> {
 
     try {
       var response = await http.post(
-        Uri.parse("http://192.168.29.131:5002/get_sentences"),
+        Uri.parse("http://192.168.147.43:5002/get_sentences"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"username": username}),
       );
@@ -115,7 +115,7 @@ class _VoiceSignatureScreenState extends State<VoiceSignatureScreen> {
 
     try {
       var request = http.MultipartRequest(
-          "POST", Uri.parse("http://192.168.29.131:5002/verify_speech"));
+          "POST", Uri.parse("http://192.168.147.43:5002/verify_speech"));
       request.fields["username"] = username;
       request.files.add(await http.MultipartFile.fromPath("audio", audioFilePath));
 
@@ -192,7 +192,7 @@ class _VoiceSignatureScreenState extends State<VoiceSignatureScreen> {
 
   try {
     var request = http.MultipartRequest(
-      "POST", Uri.parse("http://192.168.29.131:5002/create_voice_signature")
+      "POST", Uri.parse("http://192.168.147.43:5002/create_voice_signature")
     );
     request.fields["username"] = username;
     request.files.add(await http.MultipartFile.fromPath("audio", audioFilePath));
